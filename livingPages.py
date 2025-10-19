@@ -55,7 +55,11 @@ class WorldState:
         
     def add_character(self, name: str, description: str, traits: List[str] = None):
         if name not in self.characters:
-            self.characters[name] = Character(name=name, description=description, traits=traits or [])
+            self.characters[name] = Character(
+                name=name,
+                description=description,
+                traits=traits or []
+            )
     
     def get_character(self, name: str) -> Optional[Character]:
         return self.characters.get(name)
@@ -76,47 +80,67 @@ class WorldState:
             "time_of_day": self.time_of_day
         }
 
+# Custom CSS
 st.markdown("""
     <style>
-    .story-container {background-color:#2d2d2d;color:#f0f0f0;padding:20px;border-radius:10px;margin-bottom:20px;max-height:400px;overflow-y:auto;font-family:'Georgia', serif;line-height:1.6;}
-    .choice-btn {margin:5px;min-width:200px;}
-    .header {color:#4CAF50;}
-    .user-choice {color:#64B5F6;font-style:italic;}
-    .narrative-event {color:#FFA000;font-weight:bold;}
+    .story-container { background-color: #2d2d2d; color: #f0f0f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; max-height: 400px; overflow-y: auto; font-family: 'Georgia', serif; line-height: 1.6; }
+    .choice-btn { margin: 5px; min-width: 200px; }
+    .header { color: #4CAF50; }
+    .user-choice { color: #64B5F6; font-style: italic; }
+    .narrative-event { color: #FFA000; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-LOCAL_MODEL_URL = "http://127.0.0.1:1234/v1/chat/completions"
+# Query hosted model using API key from secrets
+HOSTED_MODEL_URL = "https://api.openai.com/v1/chat/completions"  
 
-def query_local_model(prompt: str, system_prompt: str = None) -> str:
-    headers = {"Content-Type": "application/json"}
-    messages = [{"role": "system", "content": system_prompt}] if system_prompt else []
+def query_model(prompt: str, system_prompt: str = None) -> str:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {st.secrets['API_KEY']}"
+    }
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
-    data = {"model": "local-model", "messages": messages, "temperature":0.7, "max_tokens":500}
+
+    data = {
+        "model": "gpt-3.5-turbo",
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 500
+    }
+
     try:
-        response = requests.post(LOCAL_MODEL_URL, headers=headers, json=data)
+        response = requests.post(HOSTED_MODEL_URL, headers=headers, json=data)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"Error querying local model: {str(e)}"
+        return f"Error querying model: {str(e)}"
 
 def generate_suggested_actions(story_context: str) -> List[str]:
-    system_prompt = """You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Keep each suggestion short (2-5 words) and action-oriented. Return them as a JSON array of strings."""
-    prompt = f"""Based on this story context, suggest 3-4 possible actions. Return ONLY a JSON array of strings. Story context: {story_context}"""
+    system_prompt = """You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Return them as a JSON array of short strings."""
+    prompt = f"Story context: {story_context}\nReturn 3-4 possible actions in a JSON array of strings."
     try:
-        response = query_local_model(prompt, system_prompt)
-        start, end = response.find('['), response.rfind(']') + 1
+        response = query_model(prompt, system_prompt)
+        start = response.find('[')
+        end = response.rfind(']') + 1
         if start != -1 and end != -1:
             return json.loads(response[start:end])
-    except Exception as e:
-        print(f"Error generating suggestions: {e}")
+    except:
+        pass
     return ["Look around", "Search the area", "Continue forward"]
 
 def get_arc_hint(arc_progress: int) -> str:
-    if arc_progress < 3: return "The world feels calm, but something bigger is stirring."
-    elif arc_progress < 6: return "You sense unseen forces nudging you toward a hidden truth."
-    else: return "The climax draws near, every choice feels heavy with consequence."
+    if arc_progress < 3:
+        return "The world feels calm, but something bigger is stirring."
+    elif arc_progress < 6:
+        return "You sense unseen forces nudging you toward a hidden truth."
+    else:
+        return "The climax draws near, every choice feels heavy with consequence."
 
+# Session state initialization
 if "story" not in st.session_state:
     st.session_state.story = "You awaken in a quiet village at dawn..."
     st.session_state.choices = []
@@ -126,29 +150,45 @@ if "story" not in st.session_state:
     st.session_state.last_twist = ""
     st.session_state.is_loading = False
     st.session_state.world = WorldState()
-    st.session_state.world.add_character("Old Man Jenkins", "An elderly villager with a long white beard and kind eyes.", ["wise","friendly","knowledgeable"])
-    st.session_state.world.add_character("Captain Rourke", "The grizzled captain of the village guard, always on the lookout for trouble.", ["brave","suspicious","dutiful"])
-    st.session_state.world.add_character("Mysterious Stranger", "A hooded figure who watches from the shadows.", ["mysterious","elusive","dangerous"])
+    st.session_state.world.add_character("Old Man Jenkins", "An elderly villager with a long white beard and kind eyes.", ["wise", "friendly", "knowledgeable"])
+    st.session_state.world.add_character("Captain Rourke", "The grizzled captain of the village guard, always on the lookout for trouble.", ["brave", "suspicious", "dutiful"])
+    st.session_state.world.add_character("Mysterious Stranger", "A hooded figure who watches from the shadows.", ["mysterious", "elusive", "dangerous"])
     st.session_state.world.update_character_relationship("Old Man Jenkins", 2)
     st.session_state.world.update_character_relationship("Captain Rourke", -1)
     st.session_state.world.update_character_relationship("Mysterious Stranger", -3)
 
+# Sidebar
 with st.sidebar:
     st.header("📊 Story Stats")
     col1, col2 = st.columns(2)
     col1.metric("Choices Made", len(st.session_state.choices))
-    col2.metric("Arc Progress", f"{min(100, st.session_state.arc_progress*10)}%")
+    col2.metric("Arc Progress", f"{min(100, st.session_state.arc_progress * 10)}%")
     st.markdown("---")
     st.header("👥 Characters")
     for char in st.session_state.world.characters.values():
-        rel_color = {RelationshipLevel.HOSTILE:"#ff4b4b",RelationshipLevel.UNFRIENDLY:"#ff8c8c",RelationshipLevel.NEUTRAL:"#f0f0f0",RelationshipLevel.FRIENDLY:"#90EE90",RelationshipLevel.TRUSTED:"#4CAF50",RelationshipLevel.ALLY:"#2E7D32"}.get(char.relationship,"#f0f0f0")
-        rel_icon = {RelationshipLevel.HOSTILE:"👿",RelationshipLevel.UNFRIENDLY:"😠",RelationshipLevel.NEUTRAL:"😐",RelationshipLevel.FRIENDLY:"🙂",RelationshipLevel.TRUSTED:"😊",RelationshipLevel.ALLY:"🤝"}.get(char.relationship,"❓")
+        rel_color = {
+            RelationshipLevel.HOSTILE: "#ff4b4b",
+            RelationshipLevel.UNFRIENDLY: "#ff8c8c",
+            RelationshipLevel.NEUTRAL: "#f0f0f0",
+            RelationshipLevel.FRIENDLY: "#90EE90",
+            RelationshipLevel.TRUSTED: "#4CAF50",
+            RelationshipLevel.ALLY: "#2E7D32"
+        }.get(char.relationship, "#f0f0f0")
+        rel_icon = {
+            RelationshipLevel.HOSTILE: "👿",
+            RelationshipLevel.UNFRIENDLY: "😠",
+            RelationshipLevel.NEUTRAL: "😐",
+            RelationshipLevel.FRIENDLY: "🙂",
+            RelationshipLevel.TRUSTED: "😊",
+            RelationshipLevel.ALLY: "🤝"
+        }.get(char.relationship, "❓")
         with st.expander(f"{rel_icon} {char.name} - {char.relationship.name}"):
             st.write(char.description)
-            st.progress((char.relationship_points+10)/20,f"Relationship: {char.relationship.name} ({char.relationship_points})")
+            st.progress((char.relationship_points + 10) / 20, f"Relationship: {char.relationship.name} ({char.relationship_points})")
             if char.traits:
                 cols = st.columns(3)
-                for i, trait in enumerate(char.traits): cols[i%3].markdown(f"`{trait}`")
+                for i, trait in enumerate(char.traits):
+                    cols[i % 3].markdown(f"`{trait}`")
     st.markdown("---")
     st.header("🌍 World")
     st.markdown(f"**Location:** {st.session_state.world.current_location}")
@@ -158,8 +198,10 @@ with st.sidebar:
         st.write("### Full Story")
         st.text_area("story_debug", value=st.session_state.story, height=200, label_visibility="collapsed")
 
+# Main content
 st.title("📖 Living Pages: A Dynamic Narrative System")
-st.markdown(f'<div class="story-container">{st.session_state.story}</div>', unsafe_allow_html=True)
+with st.container():
+    st.markdown(f'<div class="story-container">{st.session_state.story}</div>', unsafe_allow_html=True)
 
 if not st.session_state.suggested_actions:
     with st.spinner("Generating possible actions..."):
@@ -168,15 +210,15 @@ if not st.session_state.suggested_actions:
 st.subheader("What will you do next?")
 cols = st.columns(2)
 for i, action in enumerate(st.session_state.choices[-4:] + st.session_state.suggested_actions):
-    if i<4:
-        with cols[i%2]:
-            if st.button(action,key=f"action_{i}",use_container_width=True):
+    if i < 4:
+        with cols[i % 2]:
+            if st.button(action, key=f"action_{i}", use_container_width=True):
                 st.session_state.last_choice = action
                 st.session_state.is_loading = True
                 st.rerun()
 
 with st.expander("Or type your own action"):
-    custom_action = st.text_input("Your action:",key="custom_action")
+    custom_action = st.text_input("Your action:", key="custom_action")
     if st.button("Submit Custom Action"):
         if custom_action.strip():
             st.session_state.last_choice = custom_action
@@ -189,32 +231,35 @@ if st.session_state.is_loading and st.session_state.last_choice:
         st.session_state.choices.append(user_choice)
         st.session_state.arc_progress += 1
         twist = ""
-        if random.random()<0.4:
-            if random.random()<0.6:
-                mentioned_chars = [char for char in st.session_state.world.characters.values() if char.name.lower() in st.session_state.story.lower()]
-                if mentioned_chars:
-                    char = random.choice(mentioned_chars)
-                    interaction_type = random.choice(["challenge","threat","warning"]) if char.relationship in [RelationshipLevel.HOSTILE, RelationshipLevel.UNFRIENDLY] else random.choice(["observe","question","comment"]) if char.relationship == RelationshipLevel.NEUTRAL else random.choice(["help","advice","gift"])
-                    twist_prompt = f"Current story: {st.session_state.story}\nCharacter: {char.name}\nCharacter traits: {', '.join(char.traits)}\nRelationship: {char.relationship.name}\nGenerate a short interaction where {char.name} {interaction_type}s the player in 1-2 sentences."
-                    twist = query_local_model(twist_prompt,"You are a creative writer who creates engaging character interactions.")
-                    if interaction_type in ["help","advice","gift"]: st.session_state.world.update_character_relationship(char.name,1)
-                    elif interaction_type in ["threat","challenge"]: st.session_state.world.update_character_relationship(char.name,-1)
-                    char.last_interaction = "Just now"
-            else:
-                twist_prompt = f"The current story: {st.session_state.story}\nThe player chose to: {user_choice}\nGenerate a short, surprising narrative twist (1-2 sentences)."
-                twist = query_local_model(twist_prompt,"You are a creative writing assistant that adds exciting twists to stories.")
-                if random.random()<0.2:
-                    new_char_name = query_local_model("Generate a fantasy character name (just the name, no quotes or punctuation)","You are a creative writer who invents interesting character names.").strip('"\'')
-                    if new_char_name and new_char_name not in st.session_state.world.characters:
-                        char_traits = random.sample(["mysterious","friendly","suspicious","wise","playful","serious","eccentric"],k=random.randint(2,4))
-                        st.session_state.world.add_character(new_char_name,f"A {char_traits[0]} figure you've just encountered.",char_traits)
-                        twist += f"\n\nYou notice {new_char_name} watching you from a distance..."
+        if random.random() < 0.4:
+            mentioned_chars = [char for char in st.session_state.world.characters.values() if char.name.lower() in st.session_state.story.lower()]
+            if mentioned_chars:
+                char = random.choice(mentioned_chars)
+                interaction_type = random.choice(["help", "advice", "gift", "challenge", "threat", "observe", "question", "comment"])
+                twist_prompt = f"Current story: {st.session_state.story}\nCharacter: {char.name}\nCharacter traits: {', '.join(char.traits)}\nRelationship: {char.relationship.name}\nGenerate a 1-2 sentence interaction."
+                twist = query_model(twist_prompt, "You are a creative writer who creates engaging character interactions.")
+                if interaction_type in ["help", "advice", "gift"]:
+                    st.session_state.world.update_character_relationship(char.name, 1)
+                elif interaction_type in ["threat", "challenge"]:
+                    st.session_state.world.update_character_relationship(char.name, -1)
+                char.last_interaction = "Just now"
         arc_hint = get_arc_hint(st.session_state.arc_progress)
         twist_section = f'NARRATIVE TWIST (if any):\n{twist}\n\n' if twist else ''
-        prompt = f"Continue the story based on this context:\nCURRENT STORY:\n{st.session_state.story}\nPLAYER'S ACTION:\n{user_choice}\n{twist_section}NARRATIVE ARC HINT:\n{arc_hint}\nContinue the story in a way that's engaging and maintains player agency."
-        continuation = query_local_model(prompt,"You are a master storyteller. Continue the narrative engagingly in 2-4 paragraphs.")
+        prompt = f"""Continue the story:
+CURRENT STORY:
+{st.session_state.story}
+
+PLAYER'S ACTION:
+{user_choice}
+
+{twist_section}NARRATIVE ARC HINT:
+{arc_hint}
+
+Continue the story in an engaging way, acknowledging the player's action and twists."""
+        continuation = query_model(prompt, "You are a master storyteller. Continue the narrative engagingly.")
         update_text = f"\n\n> **{user_choice}**"
-        if twist: update_text += f"\n\n*{twist}*\n"
+        if twist:
+            update_text += f"\n\n*{twist}*\n"
         update_text += f"\n{continuation}"
         st.session_state.story += update_text
         st.session_state.suggested_actions = []
@@ -231,5 +276,12 @@ with st.expander("📝 Story Log", expanded=False):
     for i, choice in enumerate(st.session_state.choices, 1):
         st.write(f"{i}. {choice}")
     if st.button("Start New Game"):
-        st.session_state.clear()
+        st.session_state.story = "You awaken in a quiet village at dawn..."
+        st.session_state.choices = []
+        st.session_state.arc_progress = 0
+        st.session_state.suggested_actions = []
+        st.session_state.last_choice = ""
+        st.session_state.last_twist = ""
+        st.session_state.is_loading = False
+        st.session_state.world = WorldState()
         st.rerun()
