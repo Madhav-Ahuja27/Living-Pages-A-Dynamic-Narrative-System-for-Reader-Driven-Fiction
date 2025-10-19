@@ -83,16 +83,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Query Gemini free-tier model
+# Query Gemini (free-tier) model
 def query_model(prompt: str, system_prompt: str = None) -> str:
     full_prompt = prompt
     if system_prompt:
         full_prompt = f"{system_prompt}\n{prompt}"
     
-    url = "https://generativelanguage.googleapis.com/v1beta2/models/gemini-2.5-flash-lite:generateMessage"
+    url = "https://generativelanguage.googleapis.com/v1beta2/models/gemini-2.5-flash:generateMessage"
     headers = {"Content-Type": "application/json"}
     data = {"prompt": {"messages": [{"author": "user", "content": full_prompt}]}}
-    
+
     try:
         response = requests.post(url, headers=headers, params={"key": st.secrets["API_KEY"]}, json=data)
         response.raise_for_status()
@@ -100,6 +100,7 @@ def query_model(prompt: str, system_prompt: str = None) -> str:
     except Exception as e:
         return f"Error querying Gemini: {str(e)}"
 
+# Suggested actions
 def generate_suggested_actions(story_context: str) -> List[str]:
     system_prompt = "You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Return them as a JSON array of short strings."
     prompt = f"Story context: {story_context}\nReturn 3-4 possible actions in a JSON array of strings."
@@ -121,7 +122,7 @@ def get_arc_hint(arc_progress: int) -> str:
     else:
         return "The climax draws near, every choice feels heavy with consequence."
 
-# Initialize session state
+# Session state initialization
 if "story" not in st.session_state:
     st.session_state.story = "You awaken in a quiet village at dawn..."
     st.session_state.choices = []
@@ -147,6 +148,14 @@ with st.sidebar:
     st.markdown("---")
     st.header("👥 Characters")
     for char in st.session_state.world.characters.values():
+        rel_color = {
+            RelationshipLevel.HOSTILE: "#ff4b4b",
+            RelationshipLevel.UNFRIENDLY: "#ff8c8c",
+            RelationshipLevel.NEUTRAL: "#f0f0f0",
+            RelationshipLevel.FRIENDLY: "#90EE90",
+            RelationshipLevel.TRUSTED: "#4CAF50",
+            RelationshipLevel.ALLY: "#2E7D32"
+        }.get(char.relationship, "#f0f0f0")
         rel_icon = {
             RelationshipLevel.HOSTILE: "👿",
             RelationshipLevel.UNFRIENDLY: "😠",
