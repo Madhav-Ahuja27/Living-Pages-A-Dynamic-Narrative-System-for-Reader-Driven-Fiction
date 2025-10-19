@@ -1,5 +1,9 @@
 import streamlit as st
-st.set_page_config(page_title="Living Pages", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Living Pages", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 import requests
 import json
@@ -51,7 +55,11 @@ class WorldState:
         
     def add_character(self, name: str, description: str, traits: List[str] = None):
         if name not in self.characters:
-            self.characters[name] = Character(name=name, description=description, traits=traits or [])
+            self.characters[name] = Character(
+                name=name,
+                description=description,
+                traits=traits or []
+            )
     
     def get_character(self, name: str) -> Optional[Character]:
         return self.characters.get(name)
@@ -72,7 +80,6 @@ class WorldState:
             "time_of_day": self.time_of_day
         }
 
-# Custom CSS
 st.markdown("""
     <style>
     .story-container { background-color: #2d2d2d; color: #f0f0f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; max-height: 400px; overflow-y: auto; font-family: 'Georgia', serif; line-height: 1.6; }
@@ -83,36 +90,47 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Query Gemini (free-tier) model
-def query_model(prompt: str, system_prompt: str = None) -> str:
-    full_prompt = prompt
-    if system_prompt:
-        full_prompt = f"{system_prompt}\n{prompt}"
-    
-    url = "https://generativelanguage.googleapis.com/v1beta2/models/gemini-2.5-flash:generateMessage"
-    headers = {"Content-Type": "application/json"}
-    data = {"prompt": {"messages": [{"author": "user", "content": full_prompt}]}}
+# Gemini API
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta2/models/{GEMINI_MODEL}:generateMessage"
 
+def query_gemini(prompt: str, system_prompt: str = None) -> str:
+    payload = {
+        "prompt": {
+            "messages": [
+                {"author": "system", "content": system_prompt} if system_prompt else {},
+                {"author": "user", "content": prompt}
+            ]
+        },
+        "temperature": 0.7,
+        "maxOutputTokens": 500
+    }
     try:
-        response = requests.post(url, headers=headers, params={"key": st.secrets["API_KEY"]}, json=data)
+        response = requests.post(
+            GEMINI_URL,
+            headers={"Content-Type": "application/json"},
+            params={"key": st.secrets.get("API_KEY")},
+            json=payload
+        )
         response.raise_for_status()
-        return response.json()["candidates"][0]["content"]
+        return response.json()["candidates"][0]["content"][0]["text"]
     except Exception as e:
-        return f"Error querying Gemini: {str(e)}"
+        print(f"Error querying Gemini: {e}")
+        # Fallback: return a default message
+        return None
 
-# Suggested actions
 def generate_suggested_actions(story_context: str) -> List[str]:
-    system_prompt = "You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Return them as a JSON array of short strings."
-    prompt = f"Story context: {story_context}\nReturn 3-4 possible actions in a JSON array of strings."
-    try:
-        response = query_model(prompt, system_prompt)
-        start = response.find('[')
-        end = response.rfind(']') + 1
-        if start != -1 and end != -1:
-            return json.loads(response[start:end])
-    except:
-        pass
-    return ["Look around", "Search the area", "Continue forward"]
+    system_prompt = "You are an AI that suggests 3-4 short, action-oriented choices in a JSON array."
+    prompt = f"Story context: {story_context}\nReturn 3-4 possible actions in a JSON array."
+    result = query_gemini(prompt, system_prompt)
+    if result:
+        try:
+            start = result.find('[')
+            end = result.rfind(']') + 1
+            return json.loads(result[start:end])
+        except:
+            pass
+    return ["Look around", "Search the area", "Continue forward"]  # fallback
 
 def get_arc_hint(arc_progress: int) -> str:
     if arc_progress < 3:
@@ -122,7 +140,7 @@ def get_arc_hint(arc_progress: int) -> str:
     else:
         return "The climax draws near, every choice feels heavy with consequence."
 
-# Session state initialization
+# Initialize session state
 if "story" not in st.session_state:
     st.session_state.story = "You awaken in a quiet village at dawn..."
     st.session_state.choices = []
@@ -148,14 +166,6 @@ with st.sidebar:
     st.markdown("---")
     st.header("👥 Characters")
     for char in st.session_state.world.characters.values():
-        rel_color = {
-            RelationshipLevel.HOSTILE: "#ff4b4b",
-            RelationshipLevel.UNFRIENDLY: "#ff8c8c",
-            RelationshipLevel.NEUTRAL: "#f0f0f0",
-            RelationshipLevel.FRIENDLY: "#90EE90",
-            RelationshipLevel.TRUSTED: "#4CAF50",
-            RelationshipLevel.ALLY: "#2E7D32"
-        }.get(char.relationship, "#f0f0f0")
         rel_icon = {
             RelationshipLevel.HOSTILE: "👿",
             RelationshipLevel.UNFRIENDLY: "😠",
@@ -177,13 +187,11 @@ with st.sidebar:
     st.markdown(f"**Time of Day:** {st.session_state.world.time_of_day.title()}")
     with st.expander("🔧 Debug Info", expanded=False):
         st.json(st.session_state.world.to_dict())
-        st.write("### Full Story")
         st.text_area("story_debug", value=st.session_state.story, height=200, label_visibility="collapsed")
 
 # Main content
 st.title("📖 Living Pages: A Dynamic Narrative System")
-with st.container():
-    st.markdown(f'<div class="story-container">{st.session_state.story}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="story-container">{st.session_state.story}</div>', unsafe_allow_html=True)
 
 if not st.session_state.suggested_actions:
     with st.spinner("Generating possible actions..."):
@@ -212,19 +220,7 @@ if st.session_state.is_loading and st.session_state.last_choice:
         user_choice = st.session_state.last_choice
         st.session_state.choices.append(user_choice)
         st.session_state.arc_progress += 1
-        twist = ""
-        if random.random() < 0.4:
-            mentioned_chars = [char for char in st.session_state.world.characters.values() if char.name.lower() in st.session_state.story.lower()]
-            if mentioned_chars:
-                char = random.choice(mentioned_chars)
-                interaction_type = random.choice(["help", "advice", "gift", "challenge", "threat", "observe", "question", "comment"])
-                twist_prompt = f"Current story: {st.session_state.story}\nCharacter: {char.name}\nCharacter traits: {', '.join(char.traits)}\nRelationship: {char.relationship.name}\nGenerate a 1-2 sentence interaction."
-                twist = query_model(twist_prompt, "You are a creative writer who creates engaging character interactions.")
-                if interaction_type in ["help", "advice", "gift"]:
-                    st.session_state.world.update_character_relationship(char.name, 1)
-                elif interaction_type in ["threat", "challenge"]:
-                    st.session_state.world.update_character_relationship(char.name, -1)
-                char.last_interaction = "Just now"
+        twist = "Nothing unusual happens."  # default fallback
         arc_hint = get_arc_hint(st.session_state.arc_progress)
         twist_section = f'NARRATIVE TWIST (if any):\n{twist}\n\n' if twist else ''
         prompt = f"""Continue the story:
@@ -238,7 +234,7 @@ PLAYER'S ACTION:
 {arc_hint}
 
 Continue the story in an engaging way, acknowledging the player's action and twists."""
-        continuation = query_model(prompt, "You are a master storyteller. Continue the narrative engagingly.")
+        continuation = query_gemini(prompt, "You are a master storyteller.") or "The story continues smoothly..."
         update_text = f"\n\n> **{user_choice}**"
         if twist:
             update_text += f"\n\n*{twist}*\n"
