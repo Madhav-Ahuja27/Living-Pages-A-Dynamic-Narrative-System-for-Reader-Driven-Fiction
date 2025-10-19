@@ -1,9 +1,5 @@
 import streamlit as st
-st.set_page_config(
-    page_title="Living Pages", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Living Pages", layout="wide", initial_sidebar_state="expanded")
 
 import requests
 import json
@@ -55,11 +51,7 @@ class WorldState:
         
     def add_character(self, name: str, description: str, traits: List[str] = None):
         if name not in self.characters:
-            self.characters[name] = Character(
-                name=name,
-                description=description,
-                traits=traits or []
-            )
+            self.characters[name] = Character(name=name, description=description, traits=traits or [])
     
     def get_character(self, name: str) -> Optional[Character]:
         return self.characters.get(name)
@@ -80,6 +72,7 @@ class WorldState:
             "time_of_day": self.time_of_day
         }
 
+# Custom CSS
 st.markdown("""
     <style>
     .story-container { background-color: #2d2d2d; color: #f0f0f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; max-height: 400px; overflow-y: auto; font-family: 'Georgia', serif; line-height: 1.6; }
@@ -90,12 +83,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Query Gemini free-tier model
 def query_model(prompt: str, system_prompt: str = None) -> str:
     full_prompt = prompt
     if system_prompt:
         full_prompt = f"{system_prompt}\n{prompt}"
     
-    url = "https://generativelanguage.googleapis.com/v1beta2/models/chat-bison-001:generateMessage"
+    url = "https://generativelanguage.googleapis.com/v1beta2/models/gemini-2.5-flash-lite:generateMessage"
     headers = {"Content-Type": "application/json"}
     data = {"prompt": {"messages": [{"author": "user", "content": full_prompt}]}}
     
@@ -107,7 +101,7 @@ def query_model(prompt: str, system_prompt: str = None) -> str:
         return f"Error querying Gemini: {str(e)}"
 
 def generate_suggested_actions(story_context: str) -> List[str]:
-    system_prompt = """You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Return them as a JSON array of short strings."""
+    system_prompt = "You are an AI that suggests 3-4 possible actions a player could take next in a text-based adventure game. Return them as a JSON array of short strings."
     prompt = f"Story context: {story_context}\nReturn 3-4 possible actions in a JSON array of strings."
     try:
         response = query_model(prompt, system_prompt)
@@ -127,6 +121,7 @@ def get_arc_hint(arc_progress: int) -> str:
     else:
         return "The climax draws near, every choice feels heavy with consequence."
 
+# Initialize session state
 if "story" not in st.session_state:
     st.session_state.story = "You awaken in a quiet village at dawn..."
     st.session_state.choices = []
@@ -143,6 +138,7 @@ if "story" not in st.session_state:
     st.session_state.world.update_character_relationship("Captain Rourke", -1)
     st.session_state.world.update_character_relationship("Mysterious Stranger", -3)
 
+# Sidebar
 with st.sidebar:
     st.header("📊 Story Stats")
     col1, col2 = st.columns(2)
@@ -151,14 +147,6 @@ with st.sidebar:
     st.markdown("---")
     st.header("👥 Characters")
     for char in st.session_state.world.characters.values():
-        rel_color = {
-            RelationshipLevel.HOSTILE: "#ff4b4b",
-            RelationshipLevel.UNFRIENDLY: "#ff8c8c",
-            RelationshipLevel.NEUTRAL: "#f0f0f0",
-            RelationshipLevel.FRIENDLY: "#90EE90",
-            RelationshipLevel.TRUSTED: "#4CAF50",
-            RelationshipLevel.ALLY: "#2E7D32"
-        }.get(char.relationship, "#f0f0f0")
         rel_icon = {
             RelationshipLevel.HOSTILE: "👿",
             RelationshipLevel.UNFRIENDLY: "😠",
@@ -183,6 +171,7 @@ with st.sidebar:
         st.write("### Full Story")
         st.text_area("story_debug", value=st.session_state.story, height=200, label_visibility="collapsed")
 
+# Main content
 st.title("📖 Living Pages: A Dynamic Narrative System")
 with st.container():
     st.markdown(f'<div class="story-container">{st.session_state.story}</div>', unsafe_allow_html=True)
